@@ -339,7 +339,8 @@ static int hfs_extract_all(HFSContext *ctx, const wchar_t *outDir)
                 continue;
             }
 
-            extract_progress(ctx->cb, 0, item->name);
+            double pct = ctx->total_data_size > 0 ? (double)ctx->extracted_size / (double)ctx->total_data_size : 0;
+            extract_progress(ctx->cb, pct, item->name);
 
             size_t dataLen = 0;
             uint8_t *data = hfs_read_fork(ctx, &item->dataFork, &dataLen);

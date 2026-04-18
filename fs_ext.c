@@ -1,6 +1,6 @@
 /*
  * fs_ext.c — ext2/ext3/ext4 read-only extraction
- * Supports: direct/indirect/double-indirect blocks, ext4 extents
+ * Supports: direct/indirect/double-indirect blocks, ext4 extents, symlinks
  * Skips:    symlinks (logged), inline data
  */
 #include <stdio.h>
@@ -354,7 +354,8 @@ static int ext_extract_inode(ExtContext *ctx, uint32_t ino,
         ensure_directory(fullPath);
         ext_extract_dir(ctx, ino, fullPath);
     } else if ((mode & EXT_S_IFMT) == EXT_S_IFREG) {
-        extract_progress(ctx->cb, 0, name);
+        double pct = ctx->total_data_size > 0 ? (double)ctx->extracted_size / (double)ctx->total_data_size : 0;
+        extract_progress(ctx->cb, pct, name);
 
         size_t dataLen = 0;
         uint8_t *data = ext_read_file_data(ctx, &inode, fsize, &dataLen);
@@ -371,7 +372,60 @@ static int ext_extract_inode(ExtContext *ctx, uint32_t ino,
             extract_progress(ctx->cb, pct, name);
         }
     } else if ((mode & EXT_S_IFMT) == EXT_S_IFLNK) {
-        extract_log(ctx->cb, L"[ext] Skipping symlink: %s", name);
+        /*
+         * Symlinks: if the target path fits in i_block[] (60 bytes = "fast"
+         * symlink), the path is stored inline. Otherwise it's in data blocks.
+         * We save a small text file containing "-> <target>" so the user
+         * can see what it pointed to, and also attempt to copy the target
+         * file if it exists in the same directory.
+         */
+        char target[256];
+        memset(target, 0, sizeof(target));
+
+        if (fsize < 60) {
+            /* fast symlink — target stored directly in i_block[] */
+            memcpy(target, (char *)inode.i_block, (size_t)fsize);
+            target[fsize] = 0;
+        } else {
+            /* slow symlink — read from data blocks */
+            size_t dataLen = 0;
+            uint8_t *data = ext_read_file_data(ctx, &inode, fsize, &dataLen);
+            if (data) {
+                size_t copyLen = dataLen < 255 ? dataLen : 255;
+                memcpy(target, data, copyLen);
+                target[copyLen] = 0;
+                free(data);
+            }
+        }
+
+        if (target[0]) {
+            /* Write a .symlink text file with the target path */
+            wchar_t symlinkPath[MAX_PATH * 2];
+            _snwprintf(symlinkPath, MAX_PATH * 2, L"%s.symlink", fullPath);
+
+            char content[300];
+            int clen = snprintf(content, sizeof(content), "-> %s\n", target);
+            write_extracted_file(symlinkPath, (const uint8_t *)content, clen);
+
+            /*
+             * If the target is a relative path in the same directory
+             * (no slashes), check if we already extracted it.
+             * If so, copy it so the symlink "works" on Windows.
+             */
+            if (!strchr(target, '/')) {
+                wchar_t targetW[256];
+                MultiByteToWideChar(CP_UTF8, 0, target, -1, targetW, 256);
+                wchar_t srcPath[MAX_PATH * 2];
+                _snwprintf(srcPath, MAX_PATH * 2, L"%s\\%s", outDir, targetW);
+                if (GetFileAttributesW(srcPath) != INVALID_FILE_ATTRIBUTES) {
+                    CopyFileW(srcPath, fullPath, FALSE);
+                }
+            }
+
+            extract_log(ctx->cb, L"[ext] Symlink: %s -> %S", name, target);
+        } else {
+            extract_log(ctx->cb, L"[ext] Symlink (unreadable): %s", name);
+        }
     }
     return 0;
 }

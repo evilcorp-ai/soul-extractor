@@ -406,7 +406,8 @@ static int ntfs_extract_record(NTFSContext *ctx, uint64_t mft_index,
                 return 0;
             }
 
-            extract_progress(ctx->cb, 0, name);
+            double pct = ctx->total_data_size > 0 ? (double)ctx->extracted_size / (double)ctx->total_data_size : 0;
+            extract_progress(ctx->cb, pct, name);
 
             size_t dataLen = 0;
             uint8_t *fileData = ntfs_read_attr_data(ctx, rec, ctx->mft_record_size,

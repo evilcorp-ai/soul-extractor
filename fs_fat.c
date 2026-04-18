@@ -293,7 +293,8 @@ static int fat_extract_dir(FATContext *ctx, const uint8_t *dirData, size_t dirLe
                 /* empty file */
                 write_extracted_file(fullPath, NULL, 0);
             } else if (cluster >= 2) {
-                extract_progress(ctx->cb, 0, name);
+                double pct = ctx->total_data_size > 0 ? (double)ctx->extracted_size / (double)ctx->total_data_size : 0;
+                extract_progress(ctx->cb, pct, name);
 
                 /* read file data from cluster chain */
                 FILE *fout = _wfopen(fullPath, L"wb");
@@ -663,7 +664,8 @@ static int exfat_extract_dir(ExFATContext *ctx, const uint8_t *dirData,
             }
         } else {
             if (first_cl >= 2 && data_len > 0) {
-                extract_progress(ctx->cb, 0, name);
+                double pct = ctx->total_data_size > 0 ? (double)ctx->extracted_size / (double)ctx->total_data_size : 0;
+                extract_progress(ctx->cb, pct, name);
                 FILE *fout = _wfopen(fullPath, L"wb");
                 if (fout) {
                     uint8_t *cbuf = (uint8_t *)malloc(ctx->cluster_size);
