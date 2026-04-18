@@ -1,0 +1,5 @@
+/* app.rc — Application resource file */
+#include <windows.h>
+
+/* Icon: ID 1 is the default app icon */
+1 ICON "app.ico"
